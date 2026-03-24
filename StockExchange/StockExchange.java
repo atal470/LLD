@@ -1,10 +1,12 @@
 import java.util.*;
 import java.sql.Timestamp;
 
+// ENUM
 enum OrderType {
     BUY, SELL
 }
 
+// ORDER CLASS
 class Order {
     private int orderId;
     private String stockSymbol;
@@ -19,7 +21,7 @@ class Order {
         this.quantity = quantity;
         this.price = price;
         this.orderType = orderType;
-        this.timestamp = new Timestamp(System.currentTimeMillis());
+        this.timestamp = new Timestamp(System.nanoTime()); // better FIFO
     }
 
     public int getOrderId() { return orderId; }
@@ -34,6 +36,7 @@ class Order {
     }
 }
 
+// TRADE CLASS
 class Trade {
     int buyOrderId;
     int sellOrderId;
@@ -52,64 +55,47 @@ class Trade {
     }
 }
 
+// ORDER BOOK
 class OrderBook {
-    String stockSymbol;
 
     PriorityQueue<Order> buyOrders;
     PriorityQueue<Order> sellOrders;
 
-    public OrderBook(String stockSymbol) {
-        this.stockSymbol = stockSymbol;
+    public OrderBook() {
 
         buyOrders = new PriorityQueue<>((o1, o2) -> {
             if (o1.getPrice() != o2.getPrice()) {
-                return Double.compare(o2.getPrice(), o1.getPrice()); // higher first
+                return Double.compare(o2.getPrice(), o1.getPrice());
             }
             return o1.getTimestamp().compareTo(o2.getTimestamp());
         });
 
         sellOrders = new PriorityQueue<>((o1, o2) -> {
             if (o1.getPrice() != o2.getPrice()) {
-                return Double.compare(o1.getPrice(), o2.getPrice()); // lower first
+                return Double.compare(o1.getPrice(), o2.getPrice());
             }
             return o1.getTimestamp().compareTo(o2.getTimestamp());
         });
     }
 
-    public void addBuy(Order order) {
-        buyOrders.add(order);
-    }
+    public void addBuy(Order order) { buyOrders.add(order); }
+    public void addSell(Order order) { sellOrders.add(order); }
 
-    public void addSell(Order order) {
-        sellOrders.add(order);
-    }
+    public Order getBestBuy() { return buyOrders.peek(); }
+    public Order getBestSell() { return sellOrders.peek(); }
 
-    public Order getBestBuy() {
-        return buyOrders.peek();
-    }
-
-    public Order getBestSell() {
-        return sellOrders.peek();
-    }
-
-    public void removeBestBuy() {
-        buyOrders.poll();
-    }
-
-    public void removeBestSell() {
-        sellOrders.poll();
-    }
+    public void removeBestBuy() { buyOrders.poll(); }
+    public void removeBestSell() { sellOrders.poll(); }
 }
 
-
+// STRATEGY
 interface MatchingStrategy {
     void match(Order order, OrderBook orderBook);
 }
 
-
+// BUY STRATEGY
 class BuyMatchingStrategy implements MatchingStrategy {
 
-    @Override
     public void match(Order buyOrder, OrderBook orderBook) {
 
         while (!orderBook.sellOrders.isEmpty() &&
@@ -118,16 +104,14 @@ class BuyMatchingStrategy implements MatchingStrategy {
             Order sellOrder = orderBook.getBestSell();
 
             int qty = Math.min(buyOrder.getQuantity(), sellOrder.getQuantity());
-
             double price = sellOrder.getPrice();
 
-            Trade trade = new Trade(
+            new Trade(
                     buyOrder.getOrderId(),
                     sellOrder.getOrderId(),
                     price,
                     qty
-            );
-            trade.print();
+            ).print();
 
             buyOrder.reduceQuantity(qty);
             sellOrder.reduceQuantity(qty);
@@ -148,7 +132,6 @@ class BuyMatchingStrategy implements MatchingStrategy {
 // SELL STRATEGY
 class SellMatchingStrategy implements MatchingStrategy {
 
-    @Override
     public void match(Order sellOrder, OrderBook orderBook) {
 
         while (!orderBook.buyOrders.isEmpty() &&
@@ -157,17 +140,14 @@ class SellMatchingStrategy implements MatchingStrategy {
             Order buyOrder = orderBook.getBestBuy();
 
             int qty = Math.min(sellOrder.getQuantity(), buyOrder.getQuantity());
-
-            // ✅ ALWAYS SELL PRICE
             double price = sellOrder.getPrice();
 
-            Trade trade = new Trade(
+            new Trade(
                     buyOrder.getOrderId(),
                     sellOrder.getOrderId(),
                     price,
                     qty
-            );
-            trade.print();
+            ).print();
 
             sellOrder.reduceQuantity(qty);
             buyOrder.reduceQuantity(qty);
@@ -179,7 +159,6 @@ class SellMatchingStrategy implements MatchingStrategy {
             if (sellOrder.getQuantity() == 0) break;
         }
 
-       
         if (sellOrder.getQuantity() > 0) {
             orderBook.addSell(sellOrder);
         }
@@ -189,8 +168,7 @@ class SellMatchingStrategy implements MatchingStrategy {
 // FACTORY
 class MatchingStrategyFactory {
     public static MatchingStrategy getStrategy(OrderType type) {
-        if (type == OrderType.BUY) return new BuyMatchingStrategy();
-        else return new SellMatchingStrategy();
+        return type == OrderType.BUY ? new BuyMatchingStrategy() : new SellMatchingStrategy();
     }
 }
 
@@ -199,14 +177,36 @@ class StockExchange {
 
     Map<String, OrderBook> orderBooks = new HashMap<>();
 
-    public void placeOrder(Order order) 
-    {
+    public void placeOrder(Order order) {
+
         OrderBook orderBook = orderBooks.computeIfAbsent(
                 order.getStockSymbol(),
-                k -> new OrderBook(k)
+                k -> new OrderBook()
         );
 
         MatchingStrategy strategy = MatchingStrategyFactory.getStrategy(order.getOrderType());
         strategy.match(order, orderBook);
+    }
+}
+
+
+public class Main {
+
+    public static void main(String[] args) {
+
+        StockExchange exchange = new StockExchange();
+
+        List<Order> orders = Arrays.asList(
+                new Order(1, "BAC", 100, 240.12, OrderType.SELL),
+                new Order(2, "BAC", 90, 237.45, OrderType.SELL),
+                new Order(3, "BAC", 110, 238.10, OrderType.BUY),
+                new Order(4, "BAC", 10, 237.80, OrderType.BUY),
+                new Order(5, "BAC", 40, 237.80, OrderType.BUY),
+                new Order(6, "BAC", 50, 236.00, OrderType.SELL)
+        );
+
+        for (Order order : orders) {
+            exchange.placeOrder(order);
+        }
     }
 }
